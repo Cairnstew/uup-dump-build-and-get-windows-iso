@@ -164,11 +164,16 @@
 
             # ── Extract ISO ─────────────────────────────────────────
             echo ":: Extracting ISO with 7-Zip..."
-            FIRST=$(ls "$TMPDIR"/part_* | sort | head -1)
-            7z x "$FIRST" -o"$TMPDIR/extracted" -y -bsp1 2>&1 || \
-            7z x "$FIRST" -o"$TMPDIR/extracted" -y -bsp0
+            set -- "$TMPDIR"/part_*
+            first_part="$1"
+            7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp1 2>&1 || \
+            7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp0
 
-            ISO=$(ls "$TMPDIR/extracted"/*.ISO "$TMPDIR/extracted"/*.iso 2>/dev/null | head -1)
+            for f in "$TMPDIR/extracted"/*.ISO "$TMPDIR/extracted"/*.iso; do
+              [ -f "$f" ] || continue
+              ISO="$f"
+              break
+            done
             if [ -z "$ISO" ]; then
               echo "ERROR: No ISO file found in extracted archive" >&2
               exit 1

@@ -44,10 +44,16 @@ pkgs.stdenv.mkDerivation ({
 
     echo ""
     echo "Extracting ISO with 7-Zip..."
-    7z x "$TMPDIR/parts/$(ls "$TMPDIR/parts" | sort | head -1)" -o"$TMPDIR/extracted" -y -bsp1 -bso0 2>&1 || \
-    7z x "$TMPDIR/parts/$(ls "$TMPDIR/parts" | sort | head -1)" -o"$TMPDIR/extracted" -y -bsp0 -bso0
+    set -- "$TMPDIR/parts"/*
+    first_part="$1"
+    7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp1 -bso0 2>&1 || \
+    7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp0 -bso0
 
-    iso_file="$(ls "$TMPDIR/extracted"/*.ISO "$TMPDIR/extracted"/*.iso 2>/dev/null | head -1)"
+    for f in "$TMPDIR/extracted"/*.ISO "$TMPDIR/extracted"/*.iso; do
+      [ -f "$f" ] || continue
+      iso_file="$f"
+      break
+    done
     if [ -z "$iso_file" ]; then
       echo "ERROR: No ISO file found in extracted archive" >&2
       exit 1
