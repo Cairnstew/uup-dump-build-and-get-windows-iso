@@ -105,6 +105,48 @@ powershell uup-dump-get-windows-iso.ps1 windows-11new c:/output -architecture x6
 ```
 
 
+## Nix Flake
+
+This repo provides a [Nix flake](https://nixos.wiki/wiki/Flakes) that can build a Windows ISO directly from a GitHub release — no manual hashing or part-counting required.
+
+### Commands
+
+Build the latest ISO (uses committed `releases.lock`):
+```bash
+nix build github:Cairnstew/uup-dump-build-and-get-windows-iso
+```
+
+Run the downloader app (fetches live release info, shows progress bars, saves ISO to current directory):
+```bash
+nix run github:Cairnstew/uup-dump-build-and-get-windows-iso
+```
+
+Build a specific release by tag:
+```bash
+nix build github:Cairnstew/uup-dump-build-and-get-windows-iso#windows-iso-22631.7079.23H2.PRO.X64.EN
+```
+
+Refresh cached release metadata:
+```bash
+nix run github:Cairnstew/uup-dump-build-and-get-windows-iso --refresh
+```
+
+View raw build progress (instead of Nix's consolidated output):
+```bash
+nix build --log-format raw
+```
+
+### Lockfile
+
+The `releases.lock` file caches release metadata so `nix build` works in pure evaluation mode (no `--impure` needed). It's auto-updated by a GitHub Action whenever a new release is published.
+
+To regenerate it manually:
+```bash
+lib/update-releases.sh
+```
+
+Requires the [GitHub CLI](https://cli.github.com/) (`gh`) authenticated against the repo.
+
 ## Tags structure
 
 ```text
