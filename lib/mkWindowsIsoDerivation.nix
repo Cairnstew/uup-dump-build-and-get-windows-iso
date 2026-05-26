@@ -44,7 +44,7 @@ pkgs.stdenv.mkDerivation ({
 
     echo ""
     echo "Extracting ISO with 7-Zip..."
-    set -- "$TMPDIR/parts"/*
+    set -- "$TMPDIR/parts"/*.zip.001
     first_part="$1"
     7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp1 -bso0 2>&1 || \
     7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp0 -bso0
