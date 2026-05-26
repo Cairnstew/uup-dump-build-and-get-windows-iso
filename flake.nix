@@ -126,14 +126,14 @@
             echo ":: Fetching release info from GitHub..."
             curl -sfL "https://api.github.com/repos/$REPO/releases" > "$TMPDIR/releases.json"
 
-            LATEST_TAG=$(jq -r '[.[] | select(.assets // [] | map(.name) | map(select(test("\\.zip\\.\\d+$"))) | length > 0)] | first | .tag_name // empty' "$TMPDIR/releases.json")
+            LATEST_TAG=$(jq -r '[.[] | select(.assets // [] | map(.name) | map(select(test("[.]zip[.][0-9]+$"))) | length > 0)] | first | .tag_name // empty' "$TMPDIR/releases.json")
             if [ -z "$LATEST_TAG" ]; then
               echo "ERROR: No releases with ISO zip parts found" >&2
               exit 1
             fi
 
             # ── Extract asset info ──────────────────────────────────
-            ASSETS_JSON=$(jq -c ".[] | select(.tag_name == \"$LATEST_TAG\") | .assets[] | select(.name | test(\"\\.zip\\.\\\\d+$\"))" "$TMPDIR/releases.json" | sort)
+            ASSETS_JSON=$(jq -c ".[] | select(.tag_name == \"$LATEST_TAG\") | .assets[] | select(.name | test(\"[.]zip[.][0-9]+$\"))" "$TMPDIR/releases.json" | sort)
 
             TOTAL_PARTS=$(echo "$ASSETS_JSON" | jq -s 'length')
             TOTAL_BYTES=$(echo "$ASSETS_JSON" | jq -s '[.[].size] | add // 0')
