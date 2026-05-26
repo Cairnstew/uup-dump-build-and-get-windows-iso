@@ -37,8 +37,10 @@ pkgs.stdenv.mkDerivation ({
     mkdir -p "$TMPDIR/parts"
     i=1
     ${concatStringsSep "\n" (map (p: ''
-      echo "  [$i/${toString (length parts)}] Copying $(basename '${p}')..."
-      cp '${p}' "$TMPDIR/parts/"
+      dest_name=$(basename '${p}')
+      dest_name="''${dest_name#*-}"
+      echo "  [$i/${toString (length parts)}] Copying $dest_name..."
+      cp '${p}' "$TMPDIR/parts/$dest_name"
       i=$((i + 1))
     '') partSrcs)}
 
