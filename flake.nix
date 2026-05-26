@@ -51,6 +51,7 @@
             in
             {
               url = assetUrl a;
+              size = a.size or 0;
             } // (if hex != "" then { sha256 = hex; } else { })) zipAssets;
           firstPartName = if zipAssets != [] then (head zipAssets).name or "" else "";
           isoName = if firstPartName != "" then isoNameFromAsset firstPartName else null;
@@ -113,7 +114,7 @@
 
         buildScript = pkgs.writeShellApplication {
           name = "get-windows-iso";
-          runtimeInputs = with pkgs; [ curl jq unzip ];
+          runtimeInputs = with pkgs; [ curl jq p7zip ];
           text = ''
             set -euo pipefail
 
@@ -121,38 +122,51 @@
             TMPDIR="$(mktemp -d)"
             trap 'rm -rf "$TMPDIR"' EXIT
 
-            echo "Fetching release info from GitHub..."
+            # ── Fetch release metadata ──────────────────────────────
+            echo ":: Fetching release info from GitHub..."
             curl -sfL "https://api.github.com/repos/$REPO/releases" > "$TMPDIR/releases.json"
 
             LATEST_TAG=$(jq -r '[.[] | select(.assets // [] | map(.name) | map(select(test("\\.zip\\.\\d+$"))) | length > 0)] | first | .tag_name // empty' "$TMPDIR/releases.json")
-
             if [ -z "$LATEST_TAG" ]; then
               echo "ERROR: No releases with ISO zip parts found" >&2
               exit 1
             fi
 
-            echo "Latest release: $LATEST_TAG"
+            # ── Extract asset info ──────────────────────────────────
+            ASSETS_JSON=$(jq -c ".[] | select(.tag_name == \"$LATEST_TAG\") | .assets[] | select(.name | test(\"\\.zip\\.\\\\d+$\"))" "$TMPDIR/releases.json" | sort)
 
-            URLS=$(jq -r ".[] | select(.tag_name == \"$LATEST_TAG\") | .assets[] | select(.name | test("\\.zip\\.\\\\d+$")) | (.browser_download_url // .url)" "$TMPDIR/releases.json" | sort)
+            TOTAL_PARTS=$(echo "$ASSETS_JSON" | jq -s 'length')
+            TOTAL_BYTES=$(echo "$ASSETS_JSON" | jq -s '[.[].size] | add // 0')
 
-            if [ -z "$URLS" ]; then
-              echo "ERROR: No zip parts found for release $LATEST_TAG" >&2
-              exit 1
-            fi
+            echo ""
+            echo "Release:  $LATEST_TAG"
+            echo "Parts:    $TOTAL_PARTS x split-zip"
+            echo "Download: $(numfmt --to=iec "$TOTAL_BYTES") ($TOTAL_BYTES bytes)"
+            echo ""
 
+            # ── Download parts with cumulative progress ─────────────
+            DL_BYTES=0
             i=1
-            total=$(echo "$URLS" | wc -l)
-            for url in $URLS; do
-              echo "[$i/$total] Downloading: $(basename "$url")"
-              curl -sfL -o "$TMPDIR/part_$(printf '%03d' $i)" "$url"
+            echo "$ASSETS_JSON" | jq -c '.' | while read -r asset; do
+              NAME=$(echo "$asset" | jq -r '.name')
+              URL=$(echo "$asset" | jq -r '(.browser_download_url // .url)')
+              SIZE=$(echo "$asset" | jq -r '.size // 0')
+
+              echo "[$i/$TOTAL_PARTS] $NAME"
+              curl -# --fail -L -o "$TMPDIR/part_$(printf '%03d' $i)" "$URL"
+
+              DL_BYTES=$((DL_BYTES + SIZE))
+              PCT=$(echo "scale=1; $DL_BYTES * 100 / $TOTAL_BYTES" | bc 2>/dev/null || echo "?")
+              echo "  Overall: $(numfmt --to=iec "$DL_BYTES") / $(numfmt --to=iec "$TOTAL_BYTES") (''${PCT}%)"
+              echo ""
               i=$((i + 1))
             done
 
-            echo "Assembling ISO from $total parts..."
-            cat "$TMPDIR"/part_* > "$TMPDIR/combined.zip"
-
-            echo "Extracting ISO..."
-            unzip -o "$TMPDIR/combined.zip" -d "$TMPDIR/extracted"
+            # ── Extract ISO ─────────────────────────────────────────
+            echo ":: Extracting ISO with 7-Zip..."
+            FIRST=$(ls "$TMPDIR"/part_* | sort | head -1)
+            7z x "$FIRST" -o"$TMPDIR/extracted" -y -bsp1 2>&1 || \
+            7z x "$FIRST" -o"$TMPDIR/extracted" -y -bsp0
 
             ISO=$(ls "$TMPDIR/extracted"/*.ISO "$TMPDIR/extracted"/*.iso 2>/dev/null | head -1)
             if [ -z "$ISO" ]; then
@@ -160,11 +174,14 @@
               exit 1
             fi
 
+            ISO_SIZE=$(du -h "$ISO" | cut -f1)
+            ISO_HASH=$(sha256sum "$ISO" | cut -d' ' -f1)
+
             echo ""
-            echo "=== ISO ready ==="
-            echo "File: $(basename "$ISO")"
-            echo "Size: $(du -h "$ISO" | cut -f1)"
-            echo "SHA256: $(sha256sum "$ISO" | cut -d' ' -f1)"
+            echo "━━━ ISO ready ━━━"
+            echo " File:   $(basename "$ISO")"
+            echo " Size:   $ISO_SIZE"
+            echo " SHA256: $ISO_HASH"
             echo ""
 
             DEST="$(pwd)/$(basename "$ISO")"

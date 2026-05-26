@@ -3,12 +3,14 @@
 { tag, parts, isoName, isoHash ? null }:
 
 let
-  inherit (builtins) length concatStringsSep map elemAt genList toString;
+  inherit (builtins) length concatStringsSep map toString foldl';
   inherit (lib) hasPrefix removePrefix optionalAttrs optionalString strings;
 
   partSrcs = map (part: pkgs.fetchurl ({
     url = part.url;
   } // (if part ? sha256 then { inherit (part) sha256; } else { sha256 = lib.fakeSha256; }))) parts;
+
+  totalBytes = foldl' (acc: p: acc + (p.size or 0)) 0 parts;
 
   fixedOutput = optionalAttrs (isoHash != null) {
     outputHashMode = "flat";
@@ -22,14 +24,28 @@ assert isoHash == null || hasPrefix "sha256-" isoHash;
 pkgs.stdenv.mkDerivation ({
   name = strings.sanitizeDerivationName isoName;
 
-  nativeBuildInputs = with pkgs; [ unzip ];
+  nativeBuildInputs = with pkgs; [ p7zip ];
 
   buildCommand = ''
-    echo "Assembling ${isoName} from ${toString (length parts)} part(s)..."
+    echo "Release: ${tag}"
+    echo "Parts:   ${toString (length parts)} x zip parts"
+    echo "Total:   $(${pkgs.coreutils}/bin/numfmt --to=iec ${toString totalBytes})"
+    echo "ISO:     ${isoName}"
+    echo ""
 
-    cat ${concatStringsSep " " (map (p: "'${p}'") partSrcs)} > "$TMPDIR/combined.zip"
+    # Copy all parts to a single directory so 7z can find them
+    mkdir -p "$TMPDIR/parts"
+    i=1
+    ${concatStringsSep "\n" (map (p: ''
+      echo "  [$i/${toString (length parts)}] Copying $(basename '${p}')..."
+      cp '${p}' "$TMPDIR/parts/"
+      i=$((i + 1))
+    '') partSrcs)}
 
-    unzip -o "$TMPDIR/combined.zip" -d "$TMPDIR/extracted"
+    echo ""
+    echo "Extracting ISO with 7-Zip..."
+    7z x "$TMPDIR/parts/$(ls "$TMPDIR/parts" | sort | head -1)" -o"$TMPDIR/extracted" -y -bsp1 -bso0 2>&1 || \
+    7z x "$TMPDIR/parts/$(ls "$TMPDIR/parts" | sort | head -1)" -o"$TMPDIR/extracted" -y -bsp0 -bso0
 
     iso_file="$(ls "$TMPDIR/extracted"/*.ISO "$TMPDIR/extracted"/*.iso 2>/dev/null | head -1)"
     if [ -z "$iso_file" ]; then
@@ -38,6 +54,7 @@ pkgs.stdenv.mkDerivation ({
     fi
 
     ${optionalString (isoHash != null) ''
+      echo "Verifying ISO hash..."
       actual=$(sha256sum "$iso_file" | cut -d' ' -f1)
       expected=${removePrefix "sha256-" isoHash}
       if [ "$actual" != "$expected" ]; then
@@ -50,6 +67,7 @@ pkgs.stdenv.mkDerivation ({
 
     cp "$iso_file" "$out"
 
-    echo "Built: $(basename "$iso_file") ($(du -h "$out" | cut -f1))"
+    echo ""
+    echo "Done: $(basename "$iso_file") ($(du -h "$out" | cut -f1))"
   '';
 } // fixedOutput)
