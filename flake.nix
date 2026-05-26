@@ -133,7 +133,7 @@
             fi
 
             # ── Extract asset info ──────────────────────────────────
-            ASSETS_JSON=$(jq -c ".[] | select(.tag_name == \"$LATEST_TAG\") | .assets[] | select(.name | test(\"[.]zip[.][0-9]+$\"))" "$TMPDIR/releases.json" | sort)
+            ASSETS_JSON=$(jq -c "[.[] | select(.tag_name == \"$LATEST_TAG\") | .assets[] | select(.name | test(\"[.]zip[.][0-9]+$\"))] | sort_by(.name)[]" "$TMPDIR/releases.json")
 
             TOTAL_PARTS=$(echo "$ASSETS_JSON" | jq -s 'length')
             TOTAL_BYTES=$(echo "$ASSETS_JSON" | jq -s '[.[].size] | add // 0')
@@ -153,7 +153,7 @@
               SIZE=$(echo "$asset" | jq -r '.size // 0')
 
               echo "[$i/$TOTAL_PARTS] $NAME"
-              curl -# --fail -L -o "$TMPDIR/part_$(printf '%03d' $i)" "$URL"
+              curl -# --fail -L -o "$TMPDIR/$NAME" "$URL"
 
               DL_BYTES=$((DL_BYTES + SIZE))
               PCT=$(echo "scale=1; $DL_BYTES * 100 / $TOTAL_BYTES" | bc 2>/dev/null || echo "?")
@@ -164,7 +164,7 @@
 
             # ── Extract ISO ─────────────────────────────────────────
             echo ":: Extracting ISO with 7-Zip..."
-            set -- "$TMPDIR"/part_*
+            set -- "$TMPDIR"/*.zip.001
             first_part="$1"
             7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp1 2>&1 || \
             7z x "$first_part" -o"$TMPDIR/extracted" -y -bsp0
